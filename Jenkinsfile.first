@@ -1,0 +1,82 @@
+pipeline {
+    agent any
+    environment {
+        DOCKER_REPOSITORY = 'hyeok1234565/k8s-first-service'
+    }
+
+    stages {
+        stage('준비') {
+            steps {
+                sh "echo '빌드 준비!'"
+                git branch: 'main',
+                credentialsId: 'GitHub-Access',
+                url: 'https://github.com/KJH0476/cicd-first-service.git'
+                script {
+                    def buildId = env.BUILD_ID
+                    def timestamp = new Date().format('yyyyMMdd-HHmmss')
+                    env.IMAGE_TAG = "${buildId}-${timestamp}"
+                }
+                echo "이미지 태그: ${env.IMAGE_TAG}"
+            }
+        }
+        stage('DockerHub 로그인') {
+            steps {
+                // Docker Hub 로그인
+                withCredentials([usernamePassword(credentialsId: 'DOCKER_USER', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                    sh '''
+                       echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                    '''
+                }
+            }
+            post {
+                success {
+                    echo "DockerHub 로그인 성공"
+                }
+                failure {
+                    echo "DockerHub 로그인 실패 - 자격 증명 확인 필요"
+                }
+            }
+        }
+        stage('Docker 빌드') {
+            steps {
+                // 최신 Docker 이미지 빌드
+                sh "docker build --platform linux/amd64 -t $DOCKER_REPOSITORY:$IMAGE_TAG ."
+            }
+            post {
+                success {
+                    echo "빌드 성공: $DOCKER_REPOSITORY:$IMAGE_TAG"
+                }
+                failure {
+                    echo "빌드 실패: $DOCKER_REPOSITORY:$IMAGE_TAG"
+                    sh "docker rmi $DOCKER_REPOSITORY:$IMAGE_TAG || true"
+                }
+            }
+        }
+        stage('Docker 이미지 테스트') {
+            steps {
+                // Docker 이미지 테스트
+                sh "docker run --rm --entrypoint /bin/sh $DOCKER_REPOSITORY:$IMAGE_TAG -c 'echo \"Docker 이미지 스모크 테스트 성공\"'"
+            }
+        }
+        stage('Docker 이미지 푸시') {
+            steps {
+                sh "docker push $DOCKER_REPOSITORY:$IMAGE_TAG"
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                // Docker Hub 로그아웃
+                sh "docker logout"
+            }
+        }
+        success {
+            echo "애플리케이션 빌드 및 푸시 성공"
+            echo "DockerHub에 푸시된 이미지: $DOCKER_REPOSITORY:$IMAGE_TAG"
+        }
+        failure {
+            echo "애플리케이션 빌드 또는 푸시 실패"
+        }
+    }
+}
