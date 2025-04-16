@@ -63,6 +63,16 @@ pipeline {
                 sh "docker push $DOCKER_REPOSITORY:$IMAGE_TAG"
             }
         }
+        stage('매니패스트 jenkins job 트리거') {
+            steps {
+                build job: 'k8s-manifest-pipeline',
+                parameters: [
+                    string(name: 'tag', value: "${env.IMAGE_TAG}"),
+                    string(name: 'dockerRepo', value: "${DOCKER_REPOSITORY}"),
+                    string(name: 'baseDir', value: 'charts/first-service')
+                ]
+            }
+        }
     }
     post {
         always {
